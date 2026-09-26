@@ -15,8 +15,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# 开启 Package 和 Actions 权限
 permissions:
-  contents: write
+  contents: read
   packages: write
   actions: write
 
@@ -50,18 +51,16 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/mtvpls/moontvplus-lite
-          tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=${{ github.event.inputs.tag || 'latest' }}
+          images: ghcr.io/${{ github.repository_owner }}/moontvplus-lite
 
+      # 修改点：在 build 阶段仅按 Digest 构建推送，防止多平台标签覆盖与权限冲撞
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v5
@@ -70,10 +69,7 @@ jobs:
           file: ./Dockerfile.lite
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          tags: |
-            ghcr.io/mtvpls/moontvplus-lite:${{ steps.version.outputs.version }}
-            ghcr.io/mtvpls/moontvplus-lite:${{ github.event.inputs.tag || 'latest' }}
-          outputs: type=image,name=ghcr.io/mtvpls/moontvplus-lite,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/moontvplus-lite,annotation-index.org.opencontainers.image.description=MoonTVPlus Lite,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -115,16 +111,17 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 修改点：在 Merge 阶段统一打上 Version 和 Tag 并发布镜像 Manifest
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create \
-            -t ghcr.io/mtvpls/moontvplus-lite:${{ steps.version.outputs.version }} \
-            -t ghcr.io/mtvpls/moontvplus-lite:${{ github.event.inputs.tag || 'latest' }} \
-            $(printf 'ghcr.io/mtvpls/moontvplus-lite@sha256:%s ' *)
+            -t ghcr.io/${{ github.repository_owner }}/moontvplus-lite:${{ steps.version.outputs.version }} \
+            -t ghcr.io/${{ github.repository_owner }}/moontvplus-lite:${{ github.event.inputs.tag || 'latest' }} \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/moontvplus-lite@sha256:%s ' *)
 
   cleanup-untagged:
     runs-on: ubuntu-latest
@@ -135,7 +132,7 @@ jobs:
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          owner: mtvpls
+          owner: ${{ github.repository_owner }}
           package: moontvplus-lite
           delete-untagged: true
           validate: true
